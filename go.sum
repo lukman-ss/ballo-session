@@ -1,0 +1,6 @@
+github.com/lukman-ss/ballo v0.1.0 h1:f1Kcm8umbQ00nHJN4yiYDA6I9RqZg5f41hpE9SiT5co=
+github.com/lukman-ss/ballo v0.1.0/go.mod h1:f7wdCDdFwLIFZfl/5k/6CTxp3VKuEAtjyOdrUKvRaGo=
+github.com/lukman-ss/ballo-http v0.1.0 h1:09oB5VQaF9VVMCLuYfbUIeCTYMtq6l67JhLcDumpqpA=
+github.com/lukman-ss/ballo-http v0.1.0/go.mod h1:bu+BDCuyBmKG0K96kYyz2DfwzEXn1TjxApu9x5VfrFM=
+github.com/lukman-ss/ballo-render v0.1.0 h1:C6q3gKSbLdbwvhkW14pWaarvquV3hQh8f3sIT+DT0h8=
+github.com/lukman-ss/ballo-render v0.1.0/go.mod h1:T3IvmzyBc5MGUUelTfTUgK/ZdsuzJnsvd1L/VLMiLGc=
