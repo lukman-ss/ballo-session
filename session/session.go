@@ -27,6 +27,7 @@ type Store interface {
 
 // Session holds the session state.
 type Session struct {
+	mu        sync.RWMutex
 	ID        string
 	Data      map[string]interface{}
 	ExpiredAt time.Time
@@ -43,23 +44,32 @@ func New() *Session {
 // generateID creates a cryptographically secure random session ID.
 func generateID() string {
 	b := make([]byte, IDLen)
-	_, _ = rand.Read(b)
+	_, err := rand.Read(b)
+	if err != nil {
+		panic("session: crypto/rand failure")
+	}
 	return fmt.Sprintf("%x", b)
 }
 
 // Set stores a value in the session data.
 func (s *Session) Set(key string, value interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.Data[key] = value
 }
 
 // Get retrieves a value from the session data.
 func (s *Session) Get(key string) (interface{}, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	v, ok := s.Data[key]
 	return v, ok
 }
 
 // DeleteKey removes a key from the session data.
 func (s *Session) DeleteKey(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.Data, key)
 }
 
@@ -116,10 +126,15 @@ type Manager struct {
 	gcMutex sync.Mutex
 }
 
-// NewManager creates a new session manager.
+// NewManager creates a new session manager. Panics on nil store or empty cookie name.
 func NewManager(store Store, config *CookieConfig) *Manager {
+	if store == nil {
+		panic("session: store must not be nil")
+	}
 	if config == nil {
 		config = DefaultCookieConfig()
+	} else if config.Name == "" {
+		panic("session: cookie name must not be empty")
 	}
 	return &Manager{
 		store:  store,

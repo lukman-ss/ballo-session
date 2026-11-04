@@ -90,8 +90,9 @@ func main() {
 			return ballo.Text(401, "no session"), nil
 		}
 		sess.Set("user", "lukman")
-		mgr.CommitSession(writerFromResponse(resp), req.Request, sess)
-		return ballo.JSON(200, map[string]string{"status": "ok"}), nil
+		resp := ballo.JSON(200, map[string]string{"status": "ok"})
+		mgr.CommitSession(&session.ResponseWriterAdapter{Response: resp}, req.Request, sess)
+		return resp, nil
 	})
 
 	http.ListenAndServe(":8080", e)
@@ -105,6 +106,8 @@ func main() {
 - `SameSiteStrict` cocok untuk session sensitif; gunakan `SameSiteLax` jika perlu navigasi lintas situs.
 - Gunakan HTTPS (Secure cookie) di production.
 - Tidak ada dukungan persistence atau distributed session saat ini; implementasikan `Store` sendiri untuk itu.
+- `Session.Data` aman untuk akses concurrent (disinkronisasi). `MemoryStore.Get` mengembalikan salinan session.
+- Konfigurasi bersama (Manager, CookieConfig) divalidasi saat pembuatan; gunakan salinan konfigurasi yang tidak dapat diubah secara tidak sengaja.
 
 ## Adapter
 

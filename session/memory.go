@@ -7,9 +7,10 @@ import (
 
 // MemoryStore is an in-memory session store for development/testing.
 type MemoryStore struct {
-	mu    sync.RWMutex
-	sess  map[string]*Session
-	close chan struct{}
+	mu        sync.RWMutex
+	sess      map[string]*Session
+	close     chan struct{}
+	closeOnce sync.Once
 }
 
 // NewMemoryStore creates a new in-memory session store with GC.
@@ -60,17 +61,32 @@ func (ms *MemoryStore) Create(sess *Session) error {
 // Get retrieves a session by ID.
 func (ms *MemoryStore) Get(id string) (*Session, error) {
 	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-
 	sess, ok := ms.sess[id]
+	ms.mu.RUnlock()
+
 	if !ok {
 		return nil, ErrNotFound
 	}
 	if time.Now().After(sess.ExpiredAt) {
-		delete(ms.sess, id)
+		// delete under write lock
+		ms.mu.Lock()
+		// Re-check under write lock (another goroutine may have deleted it)
+		if s, exists := ms.sess[id]; exists && time.Now().After(s.ExpiredAt) {
+			delete(ms.sess, id)
+		}
+		ms.mu.Unlock()
 		return nil, ErrNotFound
 	}
-	return sess, nil
+	// Return a copy to prevent concurrent map access
+	sessCopy := &Session{
+		ID:        sess.ID,
+		ExpiredAt: sess.ExpiredAt,
+		Data:      make(map[string]interface{}),
+	}
+	for k, v := range sess.Data {
+		sessCopy.Data[k] = v
+	}
+	return sessCopy, nil
 }
 
 // Update updates a session.
@@ -91,8 +107,10 @@ func (ms *MemoryStore) Delete(id string) error {
 	return nil
 }
 
-// Close stops the GC loop.
+// Close stops the GC loop. Safe for multiple calls.
 func (ms *MemoryStore) Close() error {
-	close(ms.close)
+	ms.closeOnce.Do(func() {
+		close(ms.close)
+	})
 	return nil
 }
