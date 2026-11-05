@@ -117,6 +117,22 @@ func main() {
 - Konfigurasi bersama (Manager, CookieConfig) divalidasi saat pembuatan; gunakan salinan konfigurasi yang tidak dapat diubah secara tidak sengaja.
 - `Session.Data` tidak diekspor; data hanya diakses melalui method `Set`, `Get`, `DeleteKey`. Salinan session yang dikembalikan oleh `MemoryStore.Get` terpisah dari store sehingga modifikasi pada salinan tidak memengaruhi sesi yang tersimpan.
 
+### Migrasi API
+
+`Session.Data` sebelumnya diekspor sebagai `session.Data`. Versi baru menjadikannya private (`data`). Pengguna harus mengganti akses langsung ke field dengan metode:
+
+```go
+// Dulu
+value := sess.Data["key"]
+
+// Sekarang
+value, ok := sess.Get("key")
+```
+
+Untuk menulis data, gunakan `sess.Set("key", value)`. Untuk menghapus, gunakan `sess.DeleteKey("key")`.
+
+Jika Anda memerlukan semua data sekaligus, iterasikan dengan `sess.Get` per key yang diketahui atau simpan daftar key terpisah.
+
 ## Adapter
 
 - `session.NewHTTPAdapter(mgr)` — middleware `net/http` kompatibel.

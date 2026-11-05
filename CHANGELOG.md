@@ -23,11 +23,14 @@ Semua perubahan penting pada proyek ini akan dicatat di file ini.
 - `Session.Data` sekarang unexported, hanya diakses melalui method `Set`, `Get`, `DeleteKey`.
 - Salinan session dari `MemoryStore.Get` aman dari mutasi eksternal.
 
+### Berubah (Breaking)
+- **Breaking:** `Session.Data` berubah menjadi field private. Akses langsung ke `sess.Data` tidak lagi berfungsi. Gunakan `Set(key, value)`, `Get(key) (interface{}, bool)`, dan `DeleteKey(key)`. Lihat panduan migrasi di README.md.
+
 ### Ditambahkan (tes)
 - `TestMemoryStoreGetConcurrentSetDeleteKey`: verifikasi Get aman di bawah concurrent Set/DeleteKey.
 - `TestMemoryStoreGCConcurrent`: verifikasi GC tidak menyebabkan race saat membaca ExpiredAt.
 - `TestMemoryStoreNoInternalPointerMutation`: pastikan salinan tidak memengaruhi store.
 
 ### Diperbarui
-- README: dokumentasi thread‑safety `Session.Data`, contoh API publik.
+- README: dokumentasi thread‑safety `Session.Data`, contoh API publik, panduan migrasi.
 - CHANGELOG: format standar, kategorisasi perubahan.
