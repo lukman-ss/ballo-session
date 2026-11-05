@@ -54,10 +54,6 @@ func main() {
 		}
 
 		sess.Set("user", "lukman")
-		if err := mgr.CommitSession(w, r, sess); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 
 		w.Write([]byte("ok"))
 	})))
@@ -96,9 +92,6 @@ func main() {
 		}
 		sess.Set("user", "lukman")
 		resp := ballo.JSON(200, map[string]string{"status": "ok"})
-		if err := mgr.CommitSession(&session.ResponseWriterAdapter{Response: resp}, req.Request, sess); err != nil {
-			return nil, err
-		}
 		return resp, nil
 	})
 
