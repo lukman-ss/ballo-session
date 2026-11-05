@@ -45,6 +45,9 @@ func (a *BalloAdapter) Middleware() func(ballo.Handler) ballo.Handler {
 			if err != nil {
 				return resp, err
 			}
+			if resp == nil {
+				return nil, errors.New("session: ballo handler returned nil response")
+			}
 
 			if sess != nil {
 				if err := a.manager.CommitSession(&responseWriterAdapter{Response: resp}, req.Request, sess); err != nil {
@@ -61,6 +64,10 @@ func (a *BalloAdapter) Middleware() func(ballo.Handler) ballo.Handler {
 type responseWriterAdapter struct {
 	*ballo.Response
 }
+
+// ResponseWriterAdapter is an alias to responseWriterAdapter.
+// This type is exported for use in documentation and examples.
+type ResponseWriterAdapter = responseWriterAdapter
 
 func (a *responseWriterAdapter) Header() http.Header {
 	if a.Response.Header == nil {

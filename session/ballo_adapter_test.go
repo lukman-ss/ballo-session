@@ -7,6 +7,34 @@ import (
 	"github.com/lukman-ss/ballo"
 )
 
+func TestBalloAdapterNilResponse(t *testing.T) {
+	ms := NewMemoryStore()
+	defer ms.Close()
+
+	config := DefaultCookieConfig()
+	config.MaxAge = 3600
+	mgr := NewManager(ms, config)
+	adapter := NewBalloAdapter(mgr)
+
+	handler := func(req *ballo.Request) (*ballo.Response, error) {
+		return nil, nil
+	}
+
+	mw := adapter.Middleware()
+	wrapped := mw(handler)
+
+	req, _ := http.NewRequest("GET", "/", nil)
+	balloReq := &ballo.Request{Request: req, Context: req.Context()}
+	resp, err := wrapped(balloReq)
+
+	if err == nil {
+		t.Error("expected error on nil response")
+	}
+	if resp != nil {
+		t.Error("expected nil response")
+	}
+}
+
 func TestBalloAdapterMiddleware(t *testing.T) {
 	ms := NewMemoryStore()
 	defer ms.Close()

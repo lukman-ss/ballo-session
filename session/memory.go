@@ -43,7 +43,10 @@ func (ms *MemoryStore) gc() {
 	defer ms.mu.Unlock()
 
 	for id, s := range ms.sess {
-		if now.After(s.ExpiredAt) {
+		s.mu.RLock()
+		expired := now.After(s.ExpiredAt)
+		s.mu.RUnlock()
+		if expired {
 			delete(ms.sess, id)
 		}
 	}
@@ -67,24 +70,34 @@ func (ms *MemoryStore) Get(id string) (*Session, error) {
 	if !ok {
 		return nil, ErrNotFound
 	}
-	if time.Now().After(sess.ExpiredAt) {
-		// delete under write lock
-		ms.mu.Lock()
-		// Re-check under write lock (another goroutine may have deleted it)
-		if s, exists := ms.sess[id]; exists && time.Now().After(s.ExpiredAt) {
-			delete(ms.sess, id)
-		}
-		ms.mu.Unlock()
-		return nil, ErrNotFound
-	}
-	// Return a copy to prevent concurrent map access
+	// Acquire session read lock for ExpiredAt and Data copy.
+	sess.mu.RLock()
+	expired := time.Now().After(sess.ExpiredAt)
 	sessCopy := &Session{
 		ID:        sess.ID,
 		ExpiredAt: sess.ExpiredAt,
-		Data:      make(map[string]interface{}),
+		data:      make(map[string]interface{}),
 	}
-	for k, v := range sess.Data {
-		sessCopy.Data[k] = v
+	for k, v := range sess.data {
+		sessCopy.data[k] = v
+	}
+	sess.mu.RUnlock()
+
+	if expired {
+		// Delete under store write lock if still expired. Re-check
+		// session expiry under its own lock to avoid racing with concurrent
+		// mutations of ExpiredAt.
+		ms.mu.Lock()
+		if s, exists := ms.sess[id]; exists {
+			s.mu.RLock()
+			expiredAgain := time.Now().After(s.ExpiredAt)
+			s.mu.RUnlock()
+			if expiredAgain {
+				delete(ms.sess, id)
+			}
+		}
+		ms.mu.Unlock()
+		return nil, ErrNotFound
 	}
 	return sessCopy, nil
 }

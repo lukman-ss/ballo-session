@@ -25,11 +25,12 @@ type Store interface {
 	Update(sess *Session) error
 }
 
-// Session holds the session state.
+// Session holds the session state. Data access must go through the
+// synchronized methods (Set/Get/DeleteKey) and is safe for concurrent use.
 type Session struct {
 	mu        sync.RWMutex
 	ID        string
-	Data      map[string]interface{}
+	data      map[string]interface{}
 	ExpiredAt time.Time
 }
 
@@ -37,7 +38,7 @@ type Session struct {
 func New() *Session {
 	return &Session{
 		ID:   generateID(),
-		Data: make(map[string]interface{}),
+		data: make(map[string]interface{}),
 	}
 }
 
@@ -55,14 +56,14 @@ func generateID() string {
 func (s *Session) Set(key string, value interface{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Data[key] = value
+	s.data[key] = value
 }
 
 // Get retrieves a value from the session data.
 func (s *Session) Get(key string) (interface{}, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	v, ok := s.Data[key]
+	v, ok := s.data[key]
 	return v, ok
 }
 
@@ -70,11 +71,13 @@ func (s *Session) Get(key string) (interface{}, bool) {
 func (s *Session) DeleteKey(key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.Data, key)
+	delete(s.data, key)
 }
 
 // IsValid checks if the session is not expired.
 func (s *Session) IsValid() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return time.Until(s.ExpiredAt) > 0
 }
 

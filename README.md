@@ -25,6 +25,8 @@ go get github.com/lukman-ss/ballo-session
 
 ## Contoh penggunaan
 
+### net/http
+
 ```go
 package main
 
@@ -42,9 +44,9 @@ func main() {
 	config := session.DefaultCookieConfig()
 	config.Path = "/"
 	mgr := session.NewManager(store, config)
+	adapter := session.NewHTTPAdapter(mgr)
 
-	// net/http middleware
-	http.Handle("/", mgr.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/", adapter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, err := mgr.GetSession(r)
 		if err != nil {
 			http.Error(w, "no session", http.StatusUnauthorized)
@@ -52,7 +54,10 @@ func main() {
 		}
 
 		sess.Set("user", "lukman")
-		mgr.CommitSession(w, r, sess)
+		if err := mgr.CommitSession(w, r, sess); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		w.Write([]byte("ok"))
 	})))
@@ -62,7 +67,7 @@ func main() {
 }
 ```
 
-Dengan framework Ballo:
+### Framework Ballo
 
 ```go
 package main
@@ -91,7 +96,9 @@ func main() {
 		}
 		sess.Set("user", "lukman")
 		resp := ballo.JSON(200, map[string]string{"status": "ok"})
-		mgr.CommitSession(&session.ResponseWriterAdapter{Response: resp}, req.Request, sess)
+		if err := mgr.CommitSession(&session.ResponseWriterAdapter{Response: resp}, req.Request, sess); err != nil {
+			return nil, err
+		}
 		return resp, nil
 	})
 
@@ -106,8 +113,9 @@ func main() {
 - `SameSiteStrict` cocok untuk session sensitif; gunakan `SameSiteLax` jika perlu navigasi lintas situs.
 - Gunakan HTTPS (Secure cookie) di production.
 - Tidak ada dukungan persistence atau distributed session saat ini; implementasikan `Store` sendiri untuk itu.
-- `Session.Data` aman untuk akses concurrent (disinkronisasi). `MemoryStore.Get` mengembalikan salinan session.
+- `Session` aman untuk akses concurrent melalui `Set`, `Get`, `DeleteKey`. Field `Session.ID` dan `Session.ExpiredAt` hanya boleh diakses dari `Store` implementations.
 - Konfigurasi bersama (Manager, CookieConfig) divalidasi saat pembuatan; gunakan salinan konfigurasi yang tidak dapat diubah secara tidak sengaja.
+- `Session.Data` tidak diekspor; data hanya diakses melalui method `Set`, `Get`, `DeleteKey`. Salinan session yang dikembalikan oleh `MemoryStore.Get` terpisah dari store sehingga modifikasi pada salinan tidak memengaruhi sesi yang tersimpan.
 
 ## Adapter
 

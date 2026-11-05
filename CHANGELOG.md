@@ -16,10 +16,18 @@ Semua perubahan penting pada proyek ini akan dicatat di file ini.
 - Adapter untuk framework Ballo (`BalloAdapter`).
 - Dokumentasi dasar di README.md.
 - Basis pemeriksaan: gofmt, vet, dan tes unit.
-- MemoryStore.Get tidak lagi menghapus entry di bawah RLock; penghapusan dilakukan di bawah WriteLock dengan pemeriksaan ulang.
-- MemoryStore.Get mengembalikan salinan session untuk menghindari berbagi pointer ke banyak goroutine tanpa sinkronisasi.
-- Session.Data dilindungi mutex untuk operasi set/get/deleteKey concurrent-safe.
-- MemoryStore.Close aman dipanggil lebih dari sekali.
-- generateID memeriksa error crypto/rand dan panic jika gagal.
-- Validasi Manager (nil store, nama cookie kosong) dan CookieConfig yang aman.
-- Audit dan penambahan tes konkurensi; semua tes lolos dengan race detector (`go test ./... -race`).
+
+### Diperbaiki
+- `MemoryStore.Get` proteksi pembacaan `ExpiredAt` dan penyalinan `Session.Data` dengan mutex session.
+- `gc()` tidak lagi memanggil `After` pada `ExpiredAt` tanpa lock session.
+- `Session.Data` sekarang unexported, hanya diakses melalui method `Set`, `Get`, `DeleteKey`.
+- Salinan session dari `MemoryStore.Get` aman dari mutasi eksternal.
+
+### Ditambahkan (tes)
+- `TestMemoryStoreGetConcurrentSetDeleteKey`: verifikasi Get aman di bawah concurrent Set/DeleteKey.
+- `TestMemoryStoreGCConcurrent`: verifikasi GC tidak menyebabkan race saat membaca ExpiredAt.
+- `TestMemoryStoreNoInternalPointerMutation`: pastikan salinan tidak memengaruhi store.
+
+### Diperbarui
+- README: dokumentasi thread‑safety `Session.Data`, contoh API publik.
+- CHANGELOG: format standar, kategorisasi perubahan.

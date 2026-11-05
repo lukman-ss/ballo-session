@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -193,12 +194,71 @@ func TestMemoryStoreGetReturnsCopy(t *testing.T) {
 	}
 }
 
+// TestMemoryStoreConcurrentGetUpdateSet exercises MemoryStore.Get, Update,
+// and Session.Set together under concurrent load with the race detector.
+// It verifies that the store's snapshot of Data is taken under sess.mu and
+// that no data race occurs between the store and session-level mutations.
+func TestMemoryStoreConcurrentGetUpdateSet(t *testing.T) {
+	ms := NewMemoryStore()
+	defer ms.Close()
+
+	sess := New()
+	sess.ExpiredAt = time.Now().Add(1 * time.Hour)
+	if err := ms.Create(sess); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(4)
+
+	// Writer: mutate session data directly.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			sess.Set("counter", i)
+		}
+	}()
+
+	// Reader: read through the store, which copies Data under sess.mu.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			got, err := ms.Get(sess.ID)
+			if err != nil {
+				t.Errorf("get failed: %v", err)
+				return
+			}
+			_, _ = got.Get("counter")
+		}
+	}()
+
+	// Updater: persist session snapshot back to the store.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			_ = ms.Update(sess)
+		}
+	}()
+
+	// Deleter: delete session from store concurrently.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10; i++ {
+			time.Sleep(time.Millisecond * time.Duration(i+1))
+			_ = ms.Delete(sess.ID)
+			_ = ms.Create(sess) // recreate for further tests
+		}
+	}()
+
+	wg.Wait()
+}
+
 func TestSessionDataRace(t *testing.T) {
 	sess := New()
 	sess.ExpiredAt = time.Now().Add(1 * time.Hour)
 
 	var wg sync.WaitGroup
-	wg.Add(200)
+	wg.Add(300)
 
 	for i := 0; i < 100; i++ {
 		go func() {
@@ -214,5 +274,131 @@ func TestSessionDataRace(t *testing.T) {
 		}()
 	}
 
+	for i := 0; i < 100; i++ {
+		go func() {
+			defer wg.Done()
+			sess.DeleteKey("key")
+		}()
+	}
+
 	wg.Wait()
+}
+
+// TestMemoryStoreGetConcurrentSetDeleteKey verifies that Get safely copies
+// Session.Data and reads ExpiredAt while other goroutines mutate session data.
+func TestMemoryStoreGetConcurrentSetDeleteKey(t *testing.T) {
+	ms := NewMemoryStore()
+	defer ms.Close()
+
+	sess := New()
+	sess.ExpiredAt = time.Now().Add(1 * time.Hour)
+	if err := ms.Create(sess); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	const writers = 50
+	const ops = 200
+
+	// Writers mutate session data concurrently.
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < ops; j++ {
+				sess.Set(fmt.Sprintf("k%d", j), id)
+				if j%3 == 0 {
+					sess.DeleteKey(fmt.Sprintf("k%d", j))
+				}
+			}
+		}(i)
+	}
+
+	// Readers fetch session from store and inspect copy.
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < ops; j++ {
+				got, err := ms.Get(sess.ID)
+				if err != nil {
+					t.Errorf("get failed: %v", err)
+					return
+				}
+				_, _ = got.Get("dummy")
+				_ = got.ExpiredAt
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// TestMemoryStoreGCConcurrent verifies GC respects session mutex when checking expiry.
+func TestMemoryStoreGCConcurrent(t *testing.T) {
+	ms := NewMemoryStore()
+	defer ms.Close()
+
+	sess := New()
+	sess.ExpiredAt = time.Now().Add(-1 * time.Second)
+	if err := ms.Create(sess); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	// Goroutines continuously read and write while GC runs.
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				_, _ = ms.Get(sess.ID)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				sess.Set("counter", j)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// TestMemoryStoreNoInternalPointerMutation checks that stored session pointers
+// are not mutated by external code except through public API.
+func TestMemoryStoreNoInternalPointerMutation(t *testing.T) {
+	ms := NewMemoryStore()
+	defer ms.Close()
+
+	sess := New()
+	sess.ExpiredAt = time.Now().Add(1 * time.Hour)
+	if err := ms.Create(sess); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	// Modify internal data via Set.
+	sess.Set("user", "lukman")
+
+	// Get should return a copy with the modified data.
+	got, err := ms.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	val, ok := got.Get("user")
+	if !ok || val != "lukman" {
+		t.Errorf("expected 'lukman', got %v (ok=%v)", val, ok)
+	}
+
+	// Direct modification of returned copy must not affect store.
+	got.Set("user", "modified")
+	got2, err := ms.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	val2, _ := got2.Get("user")
+	if val2 != "lukman" {
+		t.Errorf("expected original value 'lukman', got %v", val2)
+	}
 }
